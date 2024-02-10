@@ -1,0 +1,76 @@
+
+echo both
+
+# Define temperature parameters
+variable	temperature equal 300.0 # Simulation temperature in Kelvin
+variable	tempDamp equal 100.0 # Relaxation time of themostat - 0.1 ps
+
+# Define pressure parameters
+variable	pressure equal 1.0 # Pressure in bars
+variable	pressureDamp equal 500.0 # Relaxation time of the barostat 0.5 ps
+
+# Define random seed
+variable	seed equal 98475
+
+# Simulation setup
+units		real	
+atom_style	full
+variable	out_freq equal 1000 # Thermo output frequency
+variable	out_freq2 equal 1000 # Dump output frequency
+neigh_modify    delay 10 every 1 # Neighbor list setup
+
+### TIP4P/Ew Parameters ###
+pair_style     lj/cut/coul/long 5.0# This cutoff is too short for a real calculation
+# Load configuration
+read_data       water_test.data
+
+# create groups ###
+
+group hy type 1
+group ox type 2
+
+
+## set charges - beside manually ###
+set group ox charge -0.830
+set group hy charge 0.415
+
+
+# Water TIP3P
+pair_coeff      1 1 0.0 0.0
+pair_coeff      2 2 0.102 3.188
+pair_coeff      1 2 0.0 0.0
+
+bond_style      harmonic
+bond_coeff      1 450 0.9572
+angle_style     harmonic
+angle_coeff     1 55 104.52
+kspace_style    pppm 1e-2 # This value is too large for a real calculation
+
+timestep	2.0 # Timestep 2 fs
+thermo          ${out_freq}
+thermo_style 	custom step time temp pe ke etotal press density lx ly lz 
+restart 	${out_freq} restart restart2
+
+# Perform minimization
+minimize 1.0e-2 1.0e-3 100 1000
+
+# Write trajectory to file
+dump           	myDump all dcd ${out_freq2} out.dcd
+dump           	myDump2 all xyz ${out_freq2} out.xyz
+#dump_modify    	myDump unwrap yes
+
+# Start simulation
+
+reset_timestep 	0
+
+fix             1 all temp/csvr ${temperature} ${temperature} ${tempDamp} ${seed} # Bussi's thermostat
+fix             2 all shake 0.0001 20 100000 t 1 2 # Shake algorithm
+#fix             3 all nve
+fix             3 all nph iso ${pressure} ${pressure} ${pressureDamp} # Isotropic barostat
+fix 		4 all momentum 10000 linear 1 1 1 # Set total linear momentum to zero every 10000 steps
+
+velocity        all create ${temperature} ${seed} dist gaussian
+
+run 50000
+
+
